@@ -46,7 +46,7 @@ class TweetSpiderByKeyword(Spider):
         if '<p>抱歉，未找到相关结果。</p>' in html:
             self.logger.info(f'no search result. url: {response.url}')
             return
-        tweets_infos = re.findall('<div class="from"\s+>(.*?)</div>', html, re.DOTALL)
+        tweets_infos = re.findall(r'<div class="from"\s+>(.*?)</div>', html, re.DOTALL)
         for tweets_info in tweets_infos:
             tweet_ids = re.findall(r'weibo\.com/\d+/(.+?)\?refer_flag=1001030103_" ', tweets_info)
             for tweet_id in tweet_ids:
