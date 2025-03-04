@@ -9,42 +9,30 @@ class RepostSpider(Spider):
     """
     name = "repost"
 
-    def __init__(self, tweet_ids_file=None, mblogins_to_process=None, *args, **kwargs):
+    def __init__(self, ids_to_process=None, is_single=False, single_id=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.tweet_ids_file = tweet_ids_file
-        if mblogins_to_process:
-            self.mblogins_to_process = mblogins_to_process
-        else:
-            self.mblogins_to_process = self.load_mblogins()
-
-    def load_mblogins(self):
-        # 从 tweet_ids_file 加载所有需要处理的 mblogin
-        try:
-            with open(self.tweet_ids_file, 'rt', encoding='utf-8') as f:
-                return [line.strip() for line in f if line.strip()]
-        except FileNotFoundError:
-            self.logger.error(f"文件 {self.tweet_ids_file} 不存在！")
-            return []
+        self.ids_to_process = ids_to_process or []
+        self.is_single = is_single
+        self.single_id = single_id
 
     def start_requests(self):
-        """
-        爬虫入口
-        """
-        for mblogin in self.mblogins_to_process:
-            mid = url_to_mid(mblogin)
+        if not self.ids_to_process:
+            self.ids_to_process = ["P5IUOlOur"]  # 仅示例
+
+        for mblogid in self.ids_to_process:
+            mid = url_to_mid(mblogid)
             url = f"https://weibo.com/ajax/statuses/repostTimeline?id={mid}&page=1&moduleID=feed&count=10"
-            yield Request(url, callback=self.parse, meta={'page_num': 1, 'mid': mid, 'mblogin': mblogin})
+            yield Request(url, callback=self.parse, meta={'page_num': 1, 'mid': mid, 'mblogin': mblogid})
 
     def parse(self, response, **kwargs):
-        """
-        网页解析
-        """
         mblogin = response.meta.get('mblogin')
         data = json.loads(response.text)
         for tweet in data.get('data', []):
             item = parse_tweet_info(tweet)
-            item['mblogin'] = mblogin  # 添加 mblogin 字段
+            item['mblogin'] = mblogin
             yield item
+
+        # 翻页
         if data.get('data'):
             mid, page_num = response.meta['mid'], response.meta['page_num']
             page_num += 1

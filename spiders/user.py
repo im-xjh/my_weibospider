@@ -3,55 +3,49 @@ from scrapy import Spider
 from scrapy.http import Request
 from spiders.common import parse_user_info
 
-
 class UserSpider(Spider):
     """
     微博用户信息爬虫
     """
     name = "user_spider"
 
-    def __init__(self, user_ids_file=None, *args, **kwargs):
+    def __init__(self, ids_to_process=None, is_single=False, single_id=None, *args, **kwargs):
         super(UserSpider, self).__init__(*args, **kwargs)
-        self.user_ids_file = user_ids_file
+        self.ids_to_process = ids_to_process or []
+        self.is_single = is_single
+        self.single_id = single_id
 
     def start_requests(self):
-        """
-        爬虫入口
-        """
-        if self.user_ids_file:
-            with open(self.user_ids_file, 'r', encoding='utf-8') as f:
-                user_ids = json.load(f)
-        else:
-            # 如果未指定用户 ID 文件，使用默认的用户 ID 列表
-            user_ids = ['']
+        if not self.ids_to_process:
+            # 默认演示
+            self.ids_to_process = ['6148092570']
 
-        urls = [f'https://weibo.com/ajax/profile/info?uid={user_id}' for user_id in user_ids]
-        for url in urls:
-            yield Request(url, callback=self.parse)
+        for user_id in self.ids_to_process:
+            url = f'https://weibo.com/ajax/profile/info?uid={user_id}'
+            yield Request(url, callback=self.parse, meta={'user_id': user_id})
 
     def parse(self, response, **kwargs):
-        """
-        解析用户基本信息
-        """
         data = json.loads(response.text)
-        item = parse_user_info(data['data']['user'])
-        url = f"https://weibo.com/ajax/profile/detail?uid={item['_id']}"
-        yield Request(url, callback=self.parse_detail, meta={'item': item})
+        user_data = data['data']['user']
+        item = parse_user_info(user_data)
+
+        # 让 pipeline 可以把它放最前
+        item['user_id'] = item['_id']  # 这里把 _id 同步给 user_id
+
+        detail_url = f"https://weibo.com/ajax/profile/detail?uid={item['_id']}"
+        yield Request(detail_url, callback=self.parse_detail, meta={'item': item})
 
     @staticmethod
     def parse_detail(response):
-        """
-        解析用户详细信息
-        """
         item = response.meta['item']
-        data = json.loads(response.text)['data']
+        data = json.loads(response.text).get('data', {})
         item['birthday'] = data.get('birthday', '')
         if 'created_at' not in item:
             item['created_at'] = data.get('created_at', '')
         item['desc_text'] = data.get('desc_text', '')
         item['ip_location'] = data.get('ip_location', '')
         item['sunshine_credit'] = data.get('sunshine_credit', {}).get('level', '')
-        item['label_desc'] = [label['name'] for label in data.get('label_desc', [])]
+        item['label_desc'] = [label['name'] for label in data.get('label_desc', [])] if 'label_desc' in data else []
         if 'company' in data:
             item['company'] = data['company']
         if 'education' in data:

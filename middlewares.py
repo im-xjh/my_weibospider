@@ -1,6 +1,3 @@
-# encoding: utf-8
-
-
 class IPProxyMiddleware(object):
     """
     代理IP中间件
@@ -11,8 +8,7 @@ class IPProxyMiddleware(object):
         """
         获取一个代理IP
         """
-        # You need to rewrite this function if you want to add proxy pool
-        # the function should return an ip in the format of "ip:port" like "12.34.1.4:9090"
+        # 这里可自行实现代理逻辑
         return None
 
     def process_request(self, request, spider):

@@ -9,61 +9,55 @@ class CommentSpider(Spider):
     """
     name = "comment"
 
-    def __init__(self, tweet_ids_file=None, mblogins_to_process=None, *args, **kwargs):
+    def __init__(self, ids_to_process=None, is_single=False, single_id=None, *args, **kwargs):
+        """
+        :param ids_to_process: 外部文件传入的 mblogid 列表
+        :param is_single: 是否只有单个ID
+        :param single_id: 单个ID的值（若 is_single=True，则可用 single_id）
+        """
         super().__init__(*args, **kwargs)
-        self.tweet_ids_file = tweet_ids_file
-        if mblogins_to_process:
-            self.mblogins_to_process = mblogins_to_process
-        else:
-            self.mblogins_to_process = self.load_mblogins()
-
-    def load_mblogins(self):
-        # 从 tweet_ids_file 加载所有需要处理的 mblogin
-        try:
-            with open(self.tweet_ids_file, 'rt', encoding='utf-8') as f:
-                return [line.strip() for line in f if line.strip()]
-        except FileNotFoundError:
-            self.logger.error(f"文件 {self.tweet_ids_file} 不存在！")
-            return []
+        self.ids_to_process = ids_to_process or []
+        self.is_single = is_single
+        self.single_id = single_id
 
     def start_requests(self):
-        """
-        爬虫入口
-        """
-        for mblogin in self.mblogins_to_process:
-            mid = url_to_mid(mblogin)
-            url = f"https://weibo.com/ajax/statuses/buildComments?" \
-                  f"is_reload=1&id={mid}&is_show_bulletin=2&is_mix=0&count=20"
-            yield Request(url, callback=self.parse, meta={'source_url': url, 'mblogin': mblogin})
+        # 如果外部没传IDs，就走内部预设
+        if not self.ids_to_process:
+            # 这里给一个演示用途的 mblogid
+            self.ids_to_process = ["P5IUOlOur"]  # 举例
+
+        for mblogid in self.ids_to_process:
+            mid = url_to_mid(mblogid)
+            url = f"https://weibo.com/ajax/statuses/buildComments?is_reload=1&id={mid}&is_show_bulletin=2&is_mix=0&count=20"
+            yield Request(url, callback=self.parse, meta={'source_url': url, 'mblogin': mblogid})
 
     def parse(self, response, **kwargs):
-        """
-        网页解析
-        """
         mblogin = response.meta.get('mblogin')
         data = json.loads(response.text)
         for comment_info in data.get('data', []):
             item = self.parse_comment(comment_info)
-            item['mblogin'] = mblogin  # 添加 mblogin 字段
+            # 为了在 pipeline 中能将其置于最前面，我们这里就直接命名为 mblogin
+            item['mblogin'] = mblogin
             yield item
+
             # 解析二级评论
             if 'more_info' in comment_info:
-                url = f"https://weibo.com/ajax/statuses/buildComments?is_reload=1&id={comment_info['id']}" \
-                      f"&is_show_bulletin=2&is_mix=1&fetch_level=1&max_id=0&count=100"
+                url = (
+                    f"https://weibo.com/ajax/statuses/buildComments?is_reload=1&id={comment_info['id']}"
+                    f"&is_show_bulletin=2&is_mix=1&fetch_level=1&max_id=0&count=100"
+                )
                 yield Request(url, callback=self.parse, priority=20, meta={'mblogin': mblogin})
+
+        # 翻页
         if data.get('max_id', 0) != 0 and 'fetch_level=1' not in response.url:
             url = response.meta['source_url'] + '&max_id=' + str(data['max_id'])
             yield Request(url, callback=self.parse, meta={'source_url': response.meta['source_url'], 'mblogin': mblogin})
 
     @staticmethod
     def parse_comment(data):
-        """
-        解析comment
-        """
         item = dict()
-        # item['mblogin'] 在 parse 方法中添加
-        item['created_at'] = parse_time(data['created_at'])
         item['_id'] = data['id']
+        item['created_at'] = parse_time(data['created_at'])
         item['like_counts'] = data['like_counts']
         item['ip_location'] = data.get('source', '')
         item['content'] = data['text_raw']
