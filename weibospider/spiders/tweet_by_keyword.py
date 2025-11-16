@@ -13,9 +13,9 @@ class TweetSpiderByKeyword(Spider):
     base_url = "https://s.weibo.com/"
 
     def start_requests(self):
-        keywords = ["北京将推养老服务时间银行"]
-        start_time = datetime.datetime(year=2022, month=1, day=15, hour=0)
-        end_time = datetime.datetime(year=2025, month=1, day=31, hour=0)
+        keywords = ["数据 要素 大赛"]
+        start_time = datetime.datetime(year=2025, month=2, day=1, hour=0)
+        end_time = datetime.datetime(year=2025, month=11, day=15, hour=23)
         is_split_by_hour = True
 
         for keyword in keywords:
