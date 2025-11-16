@@ -1,0 +1,14 @@
+[project]
+name = "weibospider"
+version = "0.1.0"
+description = "Scrapy spiders for collecting Weibo data via user IDs, keywords, tweet IDs, and more"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Im XJH" }]
+dependencies = [
+    "scrapy>=2.11,<3",
+    "python-dateutil>=2.9.0.post0",
+]
+
+[project.urls]
+"Source" = "https://github.com/im-xjh/my_weibospider"
