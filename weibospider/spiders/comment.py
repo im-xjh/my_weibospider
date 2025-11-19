@@ -26,14 +26,20 @@ class CommentSpider(Spider):
         self.is_single = is_single
         self.single_id = single_id
         self.flow = 1 if str(flow) == "1" else 0
+        self.seen_comment_ids = {}
+        self.last_max_id = {}
 
     def start_requests(self):
         # 如果外部没传IDs，就走内部预设
         if not self.ids_to_process:
             # 这里给一个演示用途的 mblogid
-            self.ids_to_process = ["PoHWDfhAC"]  # 举例
+            self.ids_to_process = [""]  # 举例
 
         for mblogid in self.ids_to_process:
+            mblogid = (mblogid or "").strip()
+            if not mblogid:
+                self.logger.warning("跳过空的 mblogid 目标")
+                continue
             mid = url_to_mid(mblogid)
             referer = self._build_referer(mblogid)
             meta = {
@@ -53,8 +59,17 @@ class CommentSpider(Spider):
         mblogin = response.meta.get('mblogin')
         fetch_level = response.meta.get('fetch_level', 0)
         data = json.loads(response.text)
+        target_id = response.meta.get('target_id')
+        key = (mblogin, target_id, fetch_level)
+        seen_ids = self.seen_comment_ids.setdefault(key, set())
+        new_found = 0
 
         for comment_info in data.get('data', []):
+            comment_id = comment_info.get('id')
+            if comment_id in seen_ids:
+                continue
+            seen_ids.add(comment_id)
+            new_found += 1
             item = self.parse_comment(comment_info)
             # 为了在 pipeline 中能将其置于最前面，我们这里就直接命名为 mblogin
             item['mblogin'] = mblogin
@@ -76,17 +91,25 @@ class CommentSpider(Spider):
                     priority=20,
                 )
 
+        if new_found == 0:
+            return
+
         # 翻页
         max_id = data.get('max_id', 0)
         if max_id:
+            max_id_str = str(max_id)
+            last_key = (mblogin, fetch_level, target_id)
+            if self.last_max_id.get(last_key) == max_id_str:
+                return
+            self.last_max_id[last_key] = max_id_str
             next_meta = {
                 'mblogin': mblogin,
-                'target_id': response.meta.get('target_id'),
+                'target_id': target_id,
                 'fetch_level': fetch_level,
                 'referer': response.meta.get('referer'),
             }
             yield self._build_comment_request(
-                target_id=response.meta.get('target_id'),
+                target_id=target_id,
                 fetch_level=fetch_level,
                 include_flow=True,
                 meta=next_meta,
