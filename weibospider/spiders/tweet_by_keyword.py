@@ -43,8 +43,11 @@ class TweetSpiderByKeyword(Spider):
 
     def parse(self, response, **kwargs):
         html = response.text
+        remaining = response.meta.get('remaining_timescopes') or []
         if '<p>抱歉，未找到相关结果。</p>' in html:
             self.logger.info(f'no search result. url: {response.url}')
+            # 即便当前时间段没有结果，也继续下一个时间段
+            yield from self._schedule_next_timescope(response.meta.get('keyword'), remaining)
             return
         tweets_infos = re.findall(r'<div class="from"\s+>(.*?)</div>', html, re.DOTALL)
         for tweets_info in tweets_infos:
@@ -64,15 +67,19 @@ class TweetSpiderByKeyword(Spider):
             url = "https://s.weibo.com" + next_page.group(1)
             yield Request(url, callback=self.parse, meta=response.meta)
         else:
-            remaining = response.meta.get('remaining_timescopes') or []
-            if remaining:
-                next_scope = remaining[0]
-                rest = remaining[1:]
-                _start_time = next_scope[0].strftime("%Y-%m-%d-%H")
-                _end_time = next_scope[1].strftime("%Y-%m-%d-%H")
-                url = f"https://s.weibo.com/weibo?q={response.meta['keyword']}&timescope=custom%3A{_start_time}%3A{_end_time}&page=1&xsort=time"
-                meta = {'keyword': response.meta['keyword'], 'remaining_timescopes': rest}
-                yield Request(url, callback=self.parse, meta=meta)
+            # 当前时间段结束，继续下一个
+            yield from self._schedule_next_timescope(response.meta.get('keyword'), remaining)
+
+    def _schedule_next_timescope(self, keyword, remaining_scopes):
+        if not keyword or not remaining_scopes:
+            return
+        next_scope = remaining_scopes[0]
+        rest = remaining_scopes[1:]
+        _start_time = next_scope[0].strftime("%Y-%m-%d-%H")
+        _end_time = next_scope[1].strftime("%Y-%m-%d-%H")
+        url = f"https://s.weibo.com/weibo?q={keyword}&timescope=custom%3A{_start_time}%3A{_end_time}&page=1&xsort=time"
+        meta = {'keyword': keyword, 'remaining_timescopes': rest}
+        yield Request(url, callback=self.parse, meta=meta)
 
     def parse_tweet(self, response):
         data = json.loads(response.text)
