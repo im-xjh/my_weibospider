@@ -3,3 +3,14 @@
 __pycache__/
 output/
 *.pyc
+uv.lock
+
+# Local auth
+weibospider/cookies.json
+weibospider/proxy_config.json
+
+# Logs
+weibospider/logs/
+
+# Debug responses
+weibospider/output/debug_responses/
