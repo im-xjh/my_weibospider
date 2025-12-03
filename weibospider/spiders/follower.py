@@ -20,9 +20,9 @@ class FollowerSpider(Spider):
         if not self.ids_to_process:
             self.ids_to_process = ['6148092570']
 
-        for user_id in self.ids_to_process:
+        for idx, user_id in enumerate(self.ids_to_process):
             url = f"{self.base_url}?page=1&uid={user_id}"
-            yield Request(url, callback=self.parse, meta={'user_id': user_id, 'page_num': 1})
+            yield Request(url, callback=self.parse, meta={'user_id': user_id, 'page_num': 1}, priority=100000 - idx)
 
     def parse(self, response, **kwargs):
         data = json.loads(response.text)

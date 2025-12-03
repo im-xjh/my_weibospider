@@ -19,10 +19,15 @@ class RepostSpider(Spider):
         if not self.ids_to_process:
             self.ids_to_process = ["P5IUOlOur"]  # 仅示例
 
-        for mblogid in self.ids_to_process:
+        for idx, mblogid in enumerate(self.ids_to_process):
             mid = url_to_mid(mblogid)
             url = f"https://weibo.com/ajax/statuses/repostTimeline?id={mid}&page=1&moduleID=feed&count=10"
-            yield Request(url, callback=self.parse, meta={'page_num': 1, 'mid': mid, 'mblogin': mblogid})
+            yield Request(
+                url,
+                callback=self.parse,
+                meta={'page_num': 1, 'mid': mid, 'mblogin': mblogid},
+                priority=100000 - idx,
+            )
 
     def parse(self, response, **kwargs):
         mblogin = response.meta.get('mblogin')

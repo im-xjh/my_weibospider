@@ -21,9 +21,9 @@ class FanSpider(Spider):
             # 默认单个示例
             self.ids_to_process = ['6148092570']
 
-        for user_id in self.ids_to_process:
+        for idx, user_id in enumerate(self.ids_to_process):
             url = f"{self.base_url}?relate=fans&page=1&uid={user_id}&type=fans"
-            yield Request(url, callback=self.parse, meta={'user_id': user_id, 'page_num': 1})
+            yield Request(url, callback=self.parse, meta={'user_id': user_id, 'page_num': 1}, priority=100000 - idx)
 
     def parse(self, response, **kwargs):
         data = json.loads(response.text)

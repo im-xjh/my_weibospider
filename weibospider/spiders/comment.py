@@ -35,7 +35,7 @@ class CommentSpider(Spider):
             # 这里给一个演示用途的 mblogid
             self.ids_to_process = [""]  # 举例
 
-        for mblogid in self.ids_to_process:
+        for idx, mblogid in enumerate(self.ids_to_process):
             mblogid = (mblogid or "").strip()
             if not mblogid:
                 self.logger.warning("跳过空的 mblogid 目标")
@@ -53,6 +53,7 @@ class CommentSpider(Spider):
                 fetch_level=0,
                 include_flow=False,
                 meta=meta,
+                priority=100000 - idx,
             )
 
     def parse(self, response, **kwargs):

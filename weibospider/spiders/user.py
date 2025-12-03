@@ -25,15 +25,25 @@ class UserSpider(Spider):
             self.logger.info("No IDs provided, using example user ID.")
             self.ids_to_process = ['6148092570']
 
-        for identifier in self.ids_to_process:
+        for idx, identifier in enumerate(self.ids_to_process):
             # 如果 identifier 包含字母，视为微博 mblogid，先抓微博详情获取 user_id
             if any(c.isalpha() for c in identifier):
                 tweet_url = f"https://weibo.com/ajax/statuses/show?id={identifier}"
-                yield Request(tweet_url, callback=self.parse_tweet, meta={'mblogid': identifier})
+                yield Request(
+                    tweet_url,
+                    callback=self.parse_tweet,
+                    meta={'mblogid': identifier},
+                    priority=100000 - idx,
+                )
             else:
                 # 纯数字，直接当 user_id 处理
                 profile_url = f"https://weibo.com/ajax/profile/info?uid={identifier}"
-                yield Request(profile_url, callback=self.parse_profile, meta={'user_id': identifier})
+                yield Request(
+                    profile_url,
+                    callback=self.parse_profile,
+                    meta={'user_id': identifier},
+                    priority=100000 - idx,
+                )
 
     def parse_tweet(self, response):
         """

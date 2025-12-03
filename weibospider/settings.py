@@ -5,34 +5,26 @@ NEWSPIDER_MODULE = 'spiders'
 
 ROBOTSTXT_OBEY = False
 
-# 读取 cookie.txt 并尝试提取 XSRF token
-with open('cookie.txt', 'rt', encoding='utf-8') as f:
-    cookie = f.read().strip()
-
-xsrf_token = ""
-for part in cookie.split(';'):
-    part = part.strip()
-    if part.startswith('XSRF-TOKEN='):
-        xsrf_token = part.split('=', 1)[1]
-        break
-
 DEFAULT_REQUEST_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:61.0) Gecko/20100101 Firefox/61.0',
-    'Cookie': cookie,
     'Referer': 'https://weibo.com/',
 }
 
-if xsrf_token:
-    DEFAULT_REQUEST_HEADERS['X-XSRF-TOKEN'] = xsrf_token
-
-CONCURRENT_REQUESTS = 16
+CONCURRENT_REQUESTS = 100
+# 单 IP/代理（单 Cookie+IP 绑定）并发上限；下载槽按账号+代理拆分
+# 设为 0 关闭 IP 级别的全局并发限制，避免所有请求被同域名 IP 上限锁死
+CONCURRENT_REQUESTS_PER_IP = 0
+CONCURRENT_REQUESTS_PER_DOMAIN = 100
+# 以每槽约 1.0s 间隔，单 Cookie+IP 约 60 条/分钟；若需 70，可调到 0.85
 DOWNLOAD_DELAY = 0.7
 
 DOWNLOADER_MIDDLEWARES = {
     'scrapy.downloadermiddlewares.cookies.CookiesMiddleware': None,
     'scrapy.downloadermiddlewares.redirect.RedirectMiddleware': None,
-    'middlewares.IPProxyMiddleware': 100,
-    'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': 101,
+    'middlewares.AccountSessionMiddleware': 90,
+    'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': 95,
+    # 可通过环境变量 DUMP_FULL_RESPONSE=1 开启全量响应调试
+    'middlewares.FullResponseDumpMiddleware': 200,
 }
 
 ITEM_PIPELINES = {

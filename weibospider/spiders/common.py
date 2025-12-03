@@ -1,6 +1,65 @@
+import html
 import json
 import re
 import dateutil.parser
+
+
+def _strip_weibo_html(text: str) -> str:
+    """移除微博内容里的 HTML 标签并反转义"""
+    if not isinstance(text, str):
+        return text
+    # 保留换行语义
+    text = re.sub(r'<br\s*/?>', '\n', text)
+    text = re.sub(r'<[^>]+>', '', text)
+    return html.unescape(text).replace('\u200b', '').strip()
+
+
+def extract_longtext_from_mobile(html: str):
+    """
+    从 m.weibo.cn/detail 页面的 $render_data 提取长文本内容。
+    兼容原生脚本形如 `var $render_data = [...]` 或 `var $render_data = [...]][0] || {};`
+    """
+    patterns = [
+        # 常见：var $render_data = [{...}][0] || {};
+        r'\$render_data\s*=\s*(\[.*?\])\s*\[0\]',
+        # 次要：var $render_data = [{...}];
+        r'\$render_data\s*=\s*(\[.*?\])\s*(?:;|\|\|)',
+    ]
+    render_json = None
+    for pat in patterns:
+        match = re.search(pat, html, re.DOTALL)
+        if match:
+            render_json = match.group(1)
+            break
+    if not render_json:
+        return None
+
+    try:
+        render_data = json.loads(render_json)
+    except Exception:
+        return None
+
+    status = None
+    blocks = render_data if isinstance(render_data, list) else [render_data]
+    for block in blocks:
+        if isinstance(block, dict) and 'status' in block:
+            status = block['status']
+            break
+    if not status:
+        return None
+
+    long_text = status.get('longText') or {}
+    if isinstance(long_text, dict) and long_text.get('longTextContent'):
+        content = long_text['longTextContent']
+    else:
+        content = status.get('longTextContent') or status.get('text_raw') or status.get('text')
+
+    if not content:
+        return None
+    # 如果拿到的是带标签的 text，则做一次轻量清洗
+    if content == status.get('text') and not status.get('text_raw') and not long_text.get('longTextContent'):
+        content = _strip_weibo_html(content)
+    return content
 
 def base62_decode(string):
     alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -74,6 +133,7 @@ def parse_tweet_info(data):
         "pic_urls": ["https://wx1.sinaimg.cn/orj960/" + pic_id for pic_id in data.get('pic_ids', [])],
         "pic_num": data['pic_num'],
         'isLongText': False,
+        'longTextExpanded': False,
         'is_retweet': False,
         "user": parse_user_info(data['user']),
     }

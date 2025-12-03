@@ -2,7 +2,7 @@ import datetime
 import json
 import re
 from scrapy import Spider, Request
-from spiders.common import parse_tweet_info, parse_long_tweet
+from spiders.common import parse_tweet_info, extract_longtext_from_mobile
 
 class TweetSpiderByKeyword(Spider):
     """
@@ -12,26 +12,34 @@ class TweetSpiderByKeyword(Spider):
     name = "tweet_spider_by_keyword"
     base_url = "https://s.weibo.com/"
 
+    def _build_timescopes(self, start_time, end_time, is_split_by_hour=True):
+        scopes = []
+        if not is_split_by_hour:
+            scopes.append((start_time, end_time))
+            return scopes
+        time_cur = start_time
+        while time_cur < end_time:
+            next_time = min(end_time, time_cur + datetime.timedelta(hours=1))
+            scopes.append((time_cur, next_time))
+            time_cur = next_time
+        return scopes
+
     def start_requests(self):
-        keywords = ["数据 要素 大赛"]
-        start_time = datetime.datetime(year=2025, month=2, day=1, hour=0)
-        end_time = datetime.datetime(year=2025, month=11, day=15, hour=23)
+        keywords = ["封存"]
+        start_time = datetime.datetime(year=2025, month=11, day=27, hour=0)
+        end_time = datetime.datetime(year=2025, month=12, day=3, hour=0)
         is_split_by_hour = True
 
         for keyword in keywords:
-            if not is_split_by_hour:
-                _start_time = start_time.strftime("%Y-%m-%d-%H")
-                _end_time = end_time.strftime("%Y-%m-%d-%H")
-                url = f"https://s.weibo.com/weibo?q={keyword}&timescope=custom%3A{_start_time}%3A{_end_time}&page=1"
-                yield Request(url, callback=self.parse, meta={'keyword': keyword})
-            else:
-                time_cur = start_time
-                while time_cur < end_time:
-                    _start_time = time_cur.strftime("%Y-%m-%d-%H")
-                    _end_time = (time_cur + datetime.timedelta(hours=1)).strftime("%Y-%m-%d-%H")
-                    url = f"https://s.weibo.com/weibo?q={keyword}&timescope=custom%3A{_start_time}%3A{_end_time}&page=1"
-                    yield Request(url, callback=self.parse, meta={'keyword': keyword})
-                    time_cur = time_cur + datetime.timedelta(hours=1)
+            scopes = self._build_timescopes(start_time, end_time, is_split_by_hour)
+            if not scopes:
+                continue
+            first_scope, remaining = scopes[0], scopes[1:]
+            _start_time = first_scope[0].strftime("%Y-%m-%d-%H")
+            _end_time = first_scope[1].strftime("%Y-%m-%d-%H")
+            url = f"https://s.weibo.com/weibo?q={keyword}&timescope=custom%3A{_start_time}%3A{_end_time}&page=1&xsort=time"
+            meta = {'keyword': keyword, 'remaining_timescopes': remaining}
+            yield Request(url, callback=self.parse, meta=meta)
 
     def parse(self, response, **kwargs):
         html = response.text
@@ -42,21 +50,63 @@ class TweetSpiderByKeyword(Spider):
         for tweets_info in tweets_infos:
             tweet_ids = re.findall(r'weibo\.com/\d+/(.+?)\?refer_flag=1001030103_" ', tweets_info)
             for tweet_id in tweet_ids:
-                url = f"https://weibo.com/ajax/statuses/show?id={tweet_id}"
-                yield Request(url, callback=self.parse_tweet, meta=response.meta, priority=10)
+                url = f"https://weibo.com/ajax/statuses/show?id={tweet_id}&is_all=1&ajwvr=6"
+                headers = {
+                    'Referer': 'https://weibo.com/',
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+                meta = dict(response.meta)
+                meta['debug_label'] = 'show_api'
+                yield Request(url, callback=self.parse_tweet, meta=meta, priority=10, headers=headers)
 
         next_page = re.search('<a href="(.*?)" class="next">下一页</a>', html)
         if next_page:
             url = "https://s.weibo.com" + next_page.group(1)
             yield Request(url, callback=self.parse, meta=response.meta)
+        else:
+            remaining = response.meta.get('remaining_timescopes') or []
+            if remaining:
+                next_scope = remaining[0]
+                rest = remaining[1:]
+                _start_time = next_scope[0].strftime("%Y-%m-%d-%H")
+                _end_time = next_scope[1].strftime("%Y-%m-%d-%H")
+                url = f"https://s.weibo.com/weibo?q={response.meta['keyword']}&timescope=custom%3A{_start_time}%3A{_end_time}&page=1&xsort=time"
+                meta = {'keyword': response.meta['keyword'], 'remaining_timescopes': rest}
+                yield Request(url, callback=self.parse, meta=meta)
 
-    @staticmethod
-    def parse_tweet(response):
+    def parse_tweet(self, response):
         data = json.loads(response.text)
         item = parse_tweet_info(data)
         item['keyword'] = response.meta['keyword']
-        if item['isLongText']:
-            url = "https://weibo.com/ajax/statuses/longtext?id=" + item['mblogid']
-            yield Request(url, callback=parse_long_tweet, meta={'item': item}, priority=20)
+        # 优先使用接口返回的全文
+        long_text = data.get('longText') or {}
+        if isinstance(long_text, dict) and long_text.get('longTextContent'):
+            item['content'] = long_text.get('longTextContent')
+            item['longTextExpanded'] = True
+        elif data.get('longTextContent'):
+            item['content'] = data.get('longTextContent')
+            item['longTextExpanded'] = True
+
+        if item['isLongText'] and not item.get('longTextExpanded'):
+            mobile_url = f"https://m.weibo.cn/detail/{item['mblogid']}"
+            headers = {
+                'Referer': 'https://m.weibo.cn/',
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+            }
+            yield Request(
+                mobile_url,
+                callback=self.parse_longtext_mobile,
+                meta={'item': item, 'debug_label': 'longtext_mobile'},
+                headers=headers,
+                priority=20
+            )
         else:
             yield item
+
+    def parse_longtext_mobile(self, response):
+        item = response.meta['item']
+        content = extract_longtext_from_mobile(response.text)
+        if content:
+            item['content'] = content
+            item['longTextExpanded'] = True
+        yield item
