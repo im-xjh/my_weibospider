@@ -4,7 +4,7 @@ __pycache__/
 output/
 *.pyc
 uv.lock
-.history
+.history/
 
 # Local auth
 weibospider/cookies.json
